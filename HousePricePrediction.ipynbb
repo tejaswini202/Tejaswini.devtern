@@ -1,0 +1,148 @@
+# **HOUSE PRICE PREDICTION**
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import LabelEncoder,MinMaxScaler, PolynomialFeatures
+import seaborn as sns
+from sklearn.model_selection import learning_curve, cross_val_score, train_test_split,KFold,GridSearchCV
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.impute import SimpleImputer
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.pipeline import make_pipeline
+
+Data Loading
+
+df=pd.read_csv('HousePricePrediction.csv')
+
+print(df.head())
+
+Data Visualisation
+
+plt.figure(figsize=(10,6))
+df['SalePrice'].hist(bins=30, edgecolor='black')
+plt.title('Distribution of House Prices')
+plt.xlabel('House Price')
+plt.ylabel('Frequency (No. of Houses)')
+plt.show()
+
+Data Cleaning
+
+numeric_columns = df.select_dtypes(include=['float64', 'int64']).columns
+categorical_columns=[i  for i in df.columns if i not in numeric_columns]
+print(categorical_columns)
+
+label_encoder=LabelEncoder()
+for i in categorical_columns:
+    df[i]=label_encoder.fit_transform(df[i])
+print(df.head())
+
+Feature Analysis
+
+correlation_matrix=df.corr()
+plt.figure(figsize=(12,8))
+sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', linewidths=0.5)
+plt.title('Correlation Matrix')
+plt.show()
+
+# Assuming correlation_matrix is the calculated correlation matrix
+target_correlations = correlation_matrix['SalePrice'].sort_values(ascending=False)
+print(target_correlations)
+
+correlation_threshold=0.1
+important_features = target_correlations[abs(target_correlations) > correlation_threshold].index.tolist()
+important_features.remove('SalePrice')
+print(important_features)
+
+X = df[important_features]
+y = df['SalePrice']
+
+##     Data Preprocessing
+from sklearn.preprocessing import MinMaxScaler
+
+scaler =  MinMaxScaler()
+X = scaler.fit_transform(X)
+
+# Assuming X is your feature matrix
+imputer = SimpleImputer(strategy='mean')  # Use 'mean', 'median', 'most_frequent', or a constant value
+X = imputer.fit_transform(X)
+y=y.values.reshape(-1,1)
+y = imputer.fit_transform(y)
+
+from sklearn.preprocessing import PolynomialFeatures
+
+poly = PolynomialFeatures(degree=2)
+X = poly.fit_transform(X)
+
+# Split the dataset into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+print(X_train.shape,X_test.shape)
+
+Building Machine Learning Model
+
+# Initialize and train a linear regression model
+model = make_pipeline(MinMaxScaler(), PolynomialFeatures(degree=2), LinearRegression())
+
+model.fit(X_train, y_train)
+
+# Make predictions on the test set
+y_pred = model.predict(X_test)
+
+# Evaluate the model
+mse = mean_squared_error(y_test, y_pred)
+r2 = r2_score(y_test, y_pred)
+
+print(f'Mean Squared Error (MSE): {mse}')
+print(f'R-squared (R2): {r2}')
+
+# Define regression models to compare
+models = {
+    'Linear Regression': make_pipeline(MinMaxScaler(), PolynomialFeatures(degree=2), LinearRegression()),
+    'Random Forest': RandomForestRegressor(random_state=42),
+    'Gradient Boosting': GradientBoostingRegressor(random_state=42)
+}
+
+# Evaluate different algorithms
+results = {}
+for name, model in models.items():
+    num_folds = 5
+    kf = KFold(n_splits=num_folds, shuffle=True, random_state=42)
+    cv_score = cross_val_score(model, X_train, y_train, cv=kf, scoring='neg_mean_squared_error')
+    results[name] = -np.mean(cv_score)
+
+# Print the results
+for name, score in results.items():
+    print(f"{name}: Average Cross-Validation MSE = {score}")
+
+# Choose the best model and evaluate on the test set
+best_model_name = min(results, key=results.get)
+best_model = models[best_model_name]
+print(f"Best Model: {best_model_name}")
+
+best_model.fit(X_train, y_train)
+y_pred = best_model.predict(X_test)
+
+test_mse = mean_squared_error(y_test, y_pred)
+r2 = best_model.score(X_test, y_test)
+print(f"R-squared Score with Best Model: {r2}")
+print(f"Test Set MSE for Best Model: {test_mse}")
+
+# Hyperparameter tuning for the best model
+if best_model_name == 'Random Forest' or best_model_name == 'Gradient Boosting':
+    param_grid = {}  # Add relevant hyperparameters to optimize
+    grid_search = GridSearchCV(best_model, param_grid, scoring='neg_mean_squared_error', cv=5, verbose=1)
+    grid_search.fit(X_train, y_train.ravel())
+
+    best_model_tuned = grid_search.best_estimator_
+    y_pred_tuned = best_model_tuned.predict(X_test)
+
+    # Model evaluation on the test set after tuning
+    test_mse_tuned = mean_squared_error(y_test, y_pred_tuned)
+    r2_tuned = best_model_tuned.score(X_test, y_test)
+
+    print(f"Tuned Best Model: {best_model_name}")
+    print(f"Tuned R-squared Score with Best Model: {r2_tuned}")
+    print(f"Tuned Test Set MSE for Best Model: {test_mse_tuned}")
+
